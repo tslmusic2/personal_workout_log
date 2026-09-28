@@ -1,0 +1,23 @@
+{
+  "name": "personal_workout_log",
+  "version": "1.0.0",
+  "description": "A way to log your personal workouts",
+  "homepage": "https://github.com/tslmusic2/personal_workout_log#readme",
+  "bugs": {
+    "url": "https://github.com/tslmusic2/personal_workout_log/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tslmusic2/personal_workout_log.git"
+  },
+  "license": "ISC",
+  "author": "tslmusic2",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "pg": "^8.23.0"
+  }
+}
