@@ -210,6 +210,141 @@ const server = http.createServer(async (req, res) => {
 
 
 
+        if(req.url.startsWith('/api/savedworkouts') && req.method === 'PATCH') {
+
+
+            //----------------------------------------------------------//
+			if (!ADMIN_API_KEY || req.headers['x-admin-key'] !== ADMIN_API_KEY) {
+				return sendJson(res, 403, { message: 'Admin access required' })
+			}
+			//----------------------------------------------------------//
+
+
+
+            let parsedReqBody
+            try {
+
+                parsedReqBody = await getRequestBody(req)
+
+                if (parsedReqBody === null || typeof parsedReqBody !== 'object' || Array.isArray(parsedReqBody)) {
+                    return sendJson(res, 400, {message: 'Request must be a JSON object'})
+                }
+            
+            } catch(err) {
+
+                if(err instanceof SyntaxError) {
+                    return sendJson(res, 400, {message: 'Request body must contain valid JSON'})
+                }
+
+                    throw err
+            }
+            
+
+            const reqKeys = Object.keys(parsedReqBody)
+
+            if (reqKeys.length === 0) {
+				return sendJson(res, 400, { message: 'Provide at least one field to update' })
+			}
+
+            const allowedFields = ['workout_type', 'length_minutes', 'description', 'workout_date', 'workout_time']
+
+            for (const field of reqKeys) {
+                const hasField = allowedFields.includes(field)
+
+                if (!hasField) {
+                    return sendJson(res, 400, {message: `${field} is not an allowed field`})
+                }
+            }
+
+            const hasWorkoutType = Object.hasOwn(parsedReqBody, 'workout_type')
+            if(hasWorkoutType) {
+                if (
+                    parsedReqBody.workout_type === null || 
+                    typeof parsedReqBody.workout_type !== 'string' || 
+                    parsedReqBody.workout_type.trim().length === 0
+                )
+                    return sendJson(res, 400, {message: 'Workout_type must be a non null string'})
+            }
+
+
+            const hasLengthMinutes = Object.hasOwn(parsedReqBody, 'length_minutes')
+            if (hasLengthMinutes) {
+                if (!Number.isInteger(parsedReqBody.length_minutes) || 
+                    parsedReqBody.length_minutes < 1 ||
+                    parsedReqBody.length_minutes > 2147483647
+                )
+                    return sendJson(res, 400, {message: 'Length_minutes must be a number between 1 and 2147483647'})
+            }
+
+
+            const hasDescription = Object.hasOwn(parsedReqBody, 'description')
+            if (hasDescription) {
+                if (
+                    parsedReqBody.description !== null &&
+                    (typeof parsedReqBody.description !== 'string' || 
+                        parsedReqBody.description.trim().length === 0)
+                    )
+                    return sendJson(res, 400, {message: 'Description must be a non empty string or null'})
+            }
+
+
+
+            const hasWorkoutDate = Object.hasOwn(parsedReqBody, 'workout_date')
+            if (hasWorkoutDate) {
+                if (!isValidISODate(parsedReqBody.workout_date)) {
+                    return sendJson(res, 400, {message: 'workout_date must be a valid date in YYYY-MM-DD format'})
+                }
+            }
+
+
+            const hasWorkoutTime = Object.hasOwn(parsedReqBody, 'workout_time')
+            if (hasWorkoutTime) {
+                if (parsedReqBody.workout_time !== null && (
+                        typeof parsedReqBody.workout_time !== 'string' ||
+                        !/^([01]\d|2[0-3]):[0-5]\d$/.test(parsedReqBody.workout_time)
+                    )
+                ) {
+                    return sendJson(res, 400, {message: 'workout_time must use HH:MM format from 00:00 to 23:59, or be null'})
+                }
+            }
+
+
+
+            const id = Number(req.url.split('/').pop())
+
+            if (!Number.isInteger(id) || id <= 0 || id > 2147483647) {
+                return sendJson(res, 400, {message: 'id must be a valid number between 1 and 2147483647'})
+            }
+
+            const updateFields = reqKeys.map((field, index) => `${field} = $${index + 1}`)
+
+
+            const values = Object.values(parsedReqBody)
+            values.push(id)
+
+            const result = await pool.query(`
+                UPDATE workouts
+                    SET ${updateFields.join(', ')}
+                WHERE id = $${values.length}
+                RETURNING *;
+                `, values)
+                                            // SET  field = $1 if more , field = $2
+                                            // WHERE id = $3
+                                            //so ideally pass in an array [$1 value, $2 value, $3 id]
+
+
+            if (result.rowCount === 0) {
+                return sendJson(res, 404, {message: 'id not found'})
+            }
+
+            return sendJson(res, 200, {message: `Workout updated successfully`, workout: result.rows[0]})
+
+
+        }
+
+
+
+
         return sendJson(res, 404, {message: 'the url requested could not be found'})
 
 
