@@ -37,18 +37,130 @@ const server = http.createServer(async (req, res) => {
 
 
         //-----------------GET HANDLER-----------------------
+        const url = new URL(req.url, 'http://localhost')  
+        if (url.pathname === '/api/savedworkouts' && req.method === 'GET') {
+                //url.pathname allow for query param to be used in addition to just the base api url
+         
 
-        if (req.url === '/api/savedworkouts' && req.method === 'GET') {
+            const urlType = url.searchParams.get('type')
+            if (urlType !== null && (urlType.trim().length === 0)) {
+                return sendJson(res, 400, {message: 'Type must be a non empty string'})
+            }
 
+            const urlDate = url.searchParams.get('date')
+            if (urlDate !== null && !isValidISODate(urlDate)) {
+                return sendJson(res, 400, {message: 'date must be in the format of YYYY-MM-DD'})
+            }
+            
+            const urlDateFrom = url.searchParams.get('from')
+            if (urlDateFrom !== null && !isValidISODate(urlDateFrom)) {
+                return sendJson(res, 400, {message: 'date from must be in the format of YYYY-MM-DD'})
+            }
+
+            const urlDateTo = url.searchParams.get('to')
+            if (urlDateTo !== null && !isValidISODate(urlDateTo)) {
+                return sendJson(res, 400, {message: 'date to must be in the format of YYYY-MM-DD'})
+            }
+
+            if (urlDateFrom !== null && urlDateTo !== null && urlDateFrom > urlDateTo) {
+                return sendJson(res, 400, {message: 'date from must be on or before to'})
+            }
+
+            if (urlDate !== null && (urlDateFrom !== null || urlDateTo !== null)) {
+                    return sendJson(res, 400, {message: 'Use either date or from/to, not both'})
+                }
+
+            const urlSort = url.searchParams.get('sort')
+            if (
+                urlSort !== null && 
+                (urlSort !== 'newest' &&
+                urlSort !== 'oldest' &&
+                urlSort !== 'longest'
+                )) {
+                return sendJson(res, 400, {message: 'Sort value must be newest, oldest, or longest'})
+            }
+            
+
+            const conditions = []
+            const values = []
+
+            if (urlType !== null) {
+                values.push(urlType)
+                conditions.push(`workout_type = $${values.length}`)
+            }
+
+            if (urlDate !== null) {
+                values.push(urlDate)
+                conditions.push(`workout_date = $${values.length}`)
+            }
+
+            if (urlDateFrom !== null) {
+                values.push(urlDateFrom)
+                conditions.push(`workout_date >= $${values.length}`)
+            }
+
+            if (urlDateTo !== null) {
+                values.push(urlDateTo)
+                conditions.push(`workout_date <= $${values.length}`)
+            }
+
+
+
+            const whereClause = conditions.length > 0 ? 
+                `WHERE ${conditions.join(' AND ')}` : ''
+
+
+            let orderBy = urlDate !== null ? 
+                `ORDER BY workout_time, id` : `ORDER BY workout_date DESC, id`
+
+                switch(urlSort) {
+                    case "newest":
+                      orderBy = `ORDER BY workout_date DESC, id`  
+                      break
+                    case "oldest":
+                      orderBy = `ORDER BY workout_date, id`  
+                      break
+                    case "longest":
+                      orderBy = `ORDER BY length_minutes DESC, id`  
+                      break
+                }
+
+            
             const result = await pool.query(`
-                SELECT * FROM workouts
-                ORDER BY workout_date DESC, id DESC;
-                `)
-
-
+                    SELECT * FROM workouts
+                    ${whereClause}
+                    ${orderBy};
+                    `, values)
+        
             const savedWorkouts = result.rows
 
             return sendJson(res, 200, savedWorkouts)
+
+        }
+
+
+    
+
+
+
+        if (req.url.startsWith('/api/savedworkouts') && req.method === 'GET') {
+
+            const id = Number(req.url.split('/').pop())
+            if (!Number.isInteger(id) || id < 1 || id > 2147483647) {
+                return sendJson(res, 400, {message: 'id must be an integer from 1 through 2147483647'})
+            }
+
+            const result = await pool.query(`
+                SELECT * FROM workouts
+                WHERE id = $1
+                `, [id])
+
+            if (result.rowCount === 0) {
+                return sendJson(res, 404, {message: 'Couldnt find a matching id'})
+            }
+            const singleWorkout = result.rows[0]
+
+            return sendJson(res, 200, singleWorkout)
         }
 
 
