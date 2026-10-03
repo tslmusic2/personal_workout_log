@@ -79,10 +79,38 @@ const server = http.createServer(async (req, res) => {
                 )) {
                 return sendJson(res, 400, {message: 'Sort value must be newest, oldest, or longest'})
             }
-            
+
+
+          //--------------------LIMIT and OFFSET --------------------------------
+            const urlLimit = url.searchParams.get('limit')
+            if (urlLimit !== null && (urlLimit.trim().length === 0)) {
+                return sendJson(res, 400, {message: 'limit must be a non empty string'})
+            }
+
+            const limitNumber = urlLimit === null ? 20 : Number(urlLimit)
+            if (!Number.isInteger(limitNumber) || limitNumber < 1 || limitNumber > 100) {
+                return sendJson(res, 400, {message: 'limit must be an integer between 1 and 100'})
+            }
+
+            const urlOffset = url.searchParams.get('offset')
+            if (urlOffset !== null && (urlOffset.trim().length === 0)) {
+                return sendJson(res, 400, {message: 'offset must be a non empty string'})
+            }
+            const offsetNumber = urlOffset === null ? 0 : Number(urlOffset)
+
+            if (!Number.isInteger(offsetNumber) || offsetNumber < 0 || offsetNumber > 2147483647) {
+                return sendJson(res, 400, {message: 'offset must be an integer between 0 and 2147483647'})
+            }
+
+
 
             const conditions = []
             const values = []
+
+            values.push(limitNumber)
+            const limitPlaceholder = `$${values.length}`
+            values.push(offsetNumber)
+            const offsetPlaceholder = `$${values.length}`
 
             if (urlType !== null) {
                 values.push(urlType)
@@ -129,7 +157,9 @@ const server = http.createServer(async (req, res) => {
             const result = await pool.query(`
                     SELECT * FROM workouts
                     ${whereClause}
-                    ${orderBy};
+                    ${orderBy}
+                    LIMIT ${limitPlaceholder}
+                    OFFSET ${offsetPlaceholder};
                     `, values)
         
             const savedWorkouts = result.rows
@@ -138,6 +168,57 @@ const server = http.createServer(async (req, res) => {
 
         }
 
+
+
+        if (req.url === '/api/workout-stats' && req.method === 'GET') {
+
+                const result = await pool.query(`
+                    SELECT 
+                        COUNT(*) AS total_workouts, 
+                        COALESCE(SUM(length_minutes), 0) AS total_minutes,
+                        FLOOR(AVG(length_minutes)) AS average_minutes,
+                        MAX(length_minutes) AS longest_workout
+                    FROM workouts;
+                    `)
+
+                return sendJson(res, 200, {message: 'Your request was successful', workouts: result.rows})
+
+        }
+
+        if (req.url === '/api/workout-stats/by-type' && req.method === 'GET') {
+
+            const result = await pool.query(`
+                SELECT workout_type,
+                    COUNT(id) AS total_workouts,
+                    COALESCE(SUM(length_minutes), 0) AS total_minutes,
+                    ROUND(AVG(length_minutes)) AS average_minutes,
+                    MAX(length_minutes) AS longest_workout
+                FROM workouts
+                GROUP BY workout_type
+                ORDER BY total_minutes DESC;
+                `)
+
+
+            return sendJson(res, 200, {message: 'Request was successful', workouts: result.rows})
+
+        }
+
+        if ( req.url === '/api/workout-stats/weekly' && req.method === 'GET') {
+
+            const result = await pool.query(`
+                SELECT 
+                    DATE_TRUNC('week', workout_date::timestamp)::date AS week_start,
+                    COUNT(id) AS total_workouts,
+                    COALESCE(SUM(length_minutes), 0) AS total_minutes,
+                    ROUND(AVG(length_minutes)) AS average_minutes,
+                    MAX(length_minutes) AS longest_workout
+                FROM workouts
+                GROUP BY week_start
+                ORDER BY week_start DESC;
+                `)
+
+                return sendJson(res, 200, {message: 'Request was successful', workouts: result.rows})
+        }
 
     
 
